@@ -515,7 +515,7 @@
         teleport:{r:13,speed:82,hp:2,color:"#74d8ff",value:320},
         nova:{r:15,speed:42,hp:4,color:"#ff9f43",value:410},
         homing:{r:12,speed:42,hp:3,color:"#a77cff",value:430},
-        burst:{r:14,speed:50,hp:4,color:"#ff4f78",value:470}
+        burst:{r:14,speed:36,hp:4,color:"#ff4f78",value:470}
       };
       return profiles[kind]||profiles.drifter;
     }
@@ -818,7 +818,7 @@
           if(e.shoot<=0){enemyShots.push({x:e.x,y:e.y,vx:Math.cos(a)*85,vy:Math.sin(a)*85,life:4,homing:.55});e.shoot=2.4;}
         } else if(e.kind==="burst") {
           e.x+=Math.cos(a)*e.speed*dt; e.y+=Math.sin(a)*e.speed*dt;e.shoot-=dt;
-          if(e.shoot<=0){for(let n=-3;n<=3;n++){const ba=a+n*.09;enemyShots.push({x:e.x,y:e.y,vx:Math.cos(ba)*180,vy:Math.sin(ba)*180,life:3});}e.shoot=1.2;}
+          if(e.shoot<=0){for(let n=-3;n<=3;n++){const ba=a+n*.09;enemyShots.push({x:e.x,y:e.y,vx:Math.cos(ba)*115,vy:Math.sin(ba)*115,life:3,damage:5});}e.shoot=1.35;}
         } else { e.x+=Math.cos(a)*e.speed*dt; e.y+=Math.sin(a)*e.speed*dt; }
         if(d<e.r+player.r) {
           if(player.invuln<=0) {
@@ -891,7 +891,7 @@
         }
         if(Math.hypot(b.x-player.x,b.y-player.y)<player.r+5){
           enemyShots.splice(i,1);
-          if(player.invuln<=0){applyDamage(player.shield>0?1:8);player.invuln=1.1;shake=7;particle(player.x,player.y,"#c08bff",12,120);sfx("hurt");}
+          if(player.invuln<=0){applyDamage(player.shield>0?1:(b.damage||8));player.invuln=1.1;shake=7;particle(player.x,player.y,"#c08bff",12,120);sfx("hurt");}
         }
         else if(b.life<=0) enemyShots.splice(i,1);
       }
