@@ -113,6 +113,22 @@
     #choice-modal.show { display:grid; }
     .choice-panel { width:min(520px,calc(100% - 32px)); max-height:78%; overflow:auto; border:1px solid #72f5e52b; background:#10162add; padding:18px; box-shadow:0 24px 70px #0009; }
     .choice-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-top:12px; }
+    #choice-modal.level-browser .choice-panel { width:min(820px,calc(100% - 28px)); max-height:90%; }
+    #choice-modal.level-browser .choice-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+    .level-browser-note { margin:8px 0 14px; color:#9da6ba; font-size:11px; line-height:1.5; }
+    .level-browser-sort { display:flex; flex-wrap:wrap; gap:7px; }
+    .level-browser-sort button,.community-level-card button { min-width:0; padding:9px 12px; background:#171d30; color:#dce4f5; border:1px solid #ffffff20; box-shadow:none; font-size:9px; }
+    .level-browser-sort button.active { color:#071213; background:var(--cyan); border-color:var(--cyan); }
+    .community-level-card { display:grid; grid-template-columns:1fr auto; gap:8px 16px; padding:14px; border:1px solid #ffffff18; background:#11182bdd; }
+    .community-level-card h3 { margin:0 0 5px; font-size:15px; }
+    .community-level-card p { margin:0; color:#9da6ba; font-size:11px; line-height:1.5; }
+    .community-level-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .community-level-badge { padding:5px 8px; border:1px solid #72f5e53b; color:var(--cyan); font:9px "DM Mono",monospace; letter-spacing:.04em; }
+    .community-level-badge.unrated { color:#ffcf80; border-color:#ffcf8055; }
+    .community-level-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:6px; }
+    .community-level-actions button { padding:9px 11px; }
+    .community-level-actions .liked { color:#ff9abb; border-color:#ff9abb66; }
+    .community-level-empty { padding:24px 10px; color:#9da6ba; text-align:center; font-size:12px; }
     .application-form { grid-column:1/-1; display:grid; gap:10px; margin-top:12px; color:#c8d0e2; font-size:12px; }
     .application-form label { display:grid; gap:5px; }
     .application-form input,.application-form textarea,.application-form select { width:100%; padding:10px; color:#f4f6ff; background:#090e1b; border:1px solid #ffffff24; font:inherit; font-size:12px; }
@@ -137,6 +153,8 @@
       .home-card b { font-size:15px; }
       .home-card span { font-size:9px; }
       .editor-body { grid-template-columns:120px 1fr 120px; }
+      .community-level-card { grid-template-columns:1fr; }
+      .community-level-actions { justify-content:flex-start; }
     }
   </style>
 </head>
@@ -1375,15 +1393,119 @@
       renderLevelLibrary();
       return true;
     }
-    function openPublishedLevels(){
+    const levelStatsKey="lumen-level-browser-stats";
+    let publishedSort="recent";
+    function readPublishedLevelStats(){
+      try {
+        const stats=JSON.parse(localStorage.getItem(levelStatsKey)||"{}");
+        if(!stats||Array.isArray(stats)||typeof stats!=="object")throw new Error("Archivio statistiche livelli non valido.");
+        return stats;
+      } catch(error) {
+        alert("Non è possibile leggere le statistiche dei livelli: "+error.message);
+        return null;
+      }
+    }
+    function savePublishedLevelStats(stats){
+      try {
+        localStorage.setItem(levelStatsKey,JSON.stringify(stats));
+        return true;
+      } catch(error) {
+        alert("Impossibile salvare le statistiche dei livelli: "+error.message);
+        return false;
+      }
+    }
+    function renderPublishedLevelCards(sortBy){
+      if(sortBy)publishedSort=sortBy;
       const levels=readUserLevels().filter(level=>level.published);
-      if(!levels.length){alert("Non ci sono ancora livelli pubblicati su questo dispositivo.");return;}
-      openChoices("LIVELLI PUBBLICATI",levels.map(level=>({label:level.name,value:level.id})),id=>{
-        const level=readUserLevels().find(entry=>entry.id===id&&entry.published);
-        if(!level){alert("Questo livello non è più disponibile.");return;}
-        customLevel={name:level.name,objects:level.objects.map(o=>({...o}))};
-        homeScreen.classList.remove("show");newRun();
+      const stats=readPublishedLevelStats();
+      if(!stats)return;
+      if(publishedSort==="downloads")levels.sort((a,b)=>(stats[b.id]?.downloads||0)-(stats[a.id]?.downloads||0));
+      else if(publishedSort==="likes")levels.sort((a,b)=>(stats[b.id]?.likes||0)-(stats[a.id]?.likes||0));
+      else levels.sort((a,b)=>Date.parse(b.updatedAt||0)-Date.parse(a.updatedAt||0));
+      choiceTitle.textContent="LIVELLI PUBBLICATI";
+      choiceModal.classList.add("level-browser");
+      choiceGrid.innerHTML="";
+      const note=document.createElement("p");
+      note.className="level-browser-note";
+      note.textContent="Rated e difficoltà sono assegnati dai moderatori. Like e scaricamenti sono salvati solo su questo browser e non sono statistiche globali.";
+      choiceGrid.appendChild(note);
+      const sortBar=document.createElement("div");
+      sortBar.className="level-browser-sort";
+      [["recent","RECENTI"],["downloads","PIÙ SCARICATI"],["likes","PIÙ PIACIUTI"]].forEach(([key,label])=>{
+        const button=document.createElement("button");
+        button.textContent=label;
+        button.classList.toggle("active",publishedSort===key);
+        button.addEventListener("click",()=>renderPublishedLevelCards(key));
+        sortBar.appendChild(button);
       });
+      choiceGrid.appendChild(sortBar);
+      if(!levels.length){
+        const empty=document.createElement("div");
+        empty.className="community-level-empty";
+        empty.textContent="Non ci sono ancora livelli pubblicati su questo dispositivo.";
+        choiceGrid.appendChild(empty);
+        return;
+      }
+      levels.forEach(level=>{
+        const levelStats=stats[level.id]||{downloads:0,likes:0,liked:false,lastDownloadedAt:""};
+        const card=document.createElement("article");
+        card.className="community-level-card";
+        const details=document.createElement("div");
+        const title=document.createElement("h3");
+        title.textContent=level.name||"Livello senza nome";
+        const meta=document.createElement("div");
+        meta.className="community-level-meta";
+        const unrated=document.createElement("span");
+        unrated.className="community-level-badge unrated";
+        unrated.textContent="NON RATED";
+        const difficulty=document.createElement("span");
+        difficulty.className="community-level-badge";
+        difficulty.textContent="DIFFICOLTÀ · IN ATTESA DEI MODERATORI";
+        meta.append(unrated,difficulty);
+        const statsLine=document.createElement("p");
+        const lastDownload=levelStats.lastDownloadedAt?new Date(levelStats.lastDownloadedAt).toLocaleDateString("it-IT"):"Nessuno scaricamento";
+        statsLine.textContent=(levelStats.downloads||0)+" scaricamenti locali · "+(levelStats.likes||0)+" like locali · recente: "+lastDownload;
+        details.append(title,meta,statsLine);
+        const actions=document.createElement("div");
+        actions.className="community-level-actions";
+        const like=document.createElement("button");
+        like.textContent=(levelStats.liked?"♥ PIACIUTO":"♡ MI PIACE")+" · "+(levelStats.likes||0);
+        like.classList.toggle("liked",Boolean(levelStats.liked));
+        like.addEventListener("click",()=>{
+          const current=readPublishedLevelStats();
+          if(!current)return;
+          const item=current[level.id]||{downloads:0,likes:0,liked:false,lastDownloadedAt:""};
+          item.liked=!item.liked;
+          item.likes=Math.max(0,(item.likes||0)+(item.liked?1:-1));
+          current[level.id]=item;
+          if(savePublishedLevelStats(current))renderPublishedLevelCards();
+        });
+        const play=document.createElement("button");
+        play.textContent="GIOCA";
+        play.addEventListener("click",()=>{
+          const current=readPublishedLevelStats();
+          if(!current)return;
+          const item=current[level.id]||{downloads:0,likes:0,liked:false,lastDownloadedAt:""};
+          item.downloads=(item.downloads||0)+1;
+          item.lastDownloadedAt=new Date().toISOString();
+          current[level.id]=item;
+          if(!savePublishedLevelStats(current))return;
+          const available=readUserLevels().find(entry=>entry.id===level.id&&entry.published);
+          if(!available){alert("Questo livello non è più disponibile.");renderPublishedLevelCards();return;}
+          choiceModal.classList.remove("show");
+          choiceModal.classList.remove("level-browser");
+          customLevel={name:available.name,objects:available.objects.map(object=>({...object}))};
+          homeScreen.classList.remove("show");newRun();
+        });
+        actions.append(like,play);
+        card.append(details,actions);
+        choiceGrid.appendChild(card);
+      });
+    }
+    function openPublishedLevels(){
+      publishedSort="recent";
+      renderPublishedLevelCards();
+      choiceModal.classList.add("show");
     }
     document.querySelector("#open-editor").addEventListener("click",openEditor);
     document.querySelector("#editor-library-btn").addEventListener("click",()=>{renderLevelLibrary();document.querySelector("#editor-library").classList.add("show");});
@@ -1413,6 +1535,7 @@
     const choiceGrid=document.querySelector("#choice-grid");
     const choiceTitle=document.querySelector("#choice-title");
     function openChoices(title,choices,callback){
+      choiceModal.classList.remove("level-browser");
       choiceTitle.textContent=title;choiceGrid.innerHTML="";
       choices.forEach(choice=>{
         const b=document.createElement("button");b.className="choice-card";b.textContent=choice.label||choice;
