@@ -118,6 +118,10 @@
     .level-browser-note { margin:8px 0 14px; color:#9da6ba; font-size:11px; line-height:1.5; }
     .level-browser-search { width:100%; margin-bottom:10px; padding:11px 12px; color:#f4f6ff; background:#090e1b; border:1px solid #ffffff24; font:12px "Space Grotesk",sans-serif; }
     .level-browser-search:focus { outline:1px solid var(--cyan); border-color:var(--cyan); }
+    .level-browser-id-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+    .level-browser-id-form input { min-width:0; padding:11px 12px; color:#f4f6ff; background:#090e1b; border:1px solid #ffffff24; font:12px "Space Grotesk",sans-serif; }
+    .level-browser-id-form button { min-width:0; padding:10px 14px; font-size:9px; }
+    .level-browser-id-error { min-height:16px; margin:-4px 0 0; color:#ff9abb; font-size:10px; }
     .level-browser-sort { display:flex; flex-wrap:wrap; gap:7px; }
     .level-browser-sort button,.community-level-card button { min-width:0; padding:9px 12px; background:#171d30; color:#dce4f5; border:1px solid #ffffff20; box-shadow:none; font-size:9px; }
     .level-browser-sort button.active { color:#071213; background:var(--cyan); border-color:var(--cyan); }
@@ -157,6 +161,7 @@
       .editor-body { grid-template-columns:120px 1fr 120px; }
       .community-level-card { grid-template-columns:1fr; }
       .community-level-actions { justify-content:flex-start; }
+      .level-browser-id-form { grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -1226,13 +1231,39 @@
         if(stored!==null){
           const levels=JSON.parse(stored);
           if(!Array.isArray(levels))throw new Error("L'archivio dei livelli non è una lista valida.");
-          return levels.filter(level=>level&&typeof level.id==="string"&&Array.isArray(level.objects));
+          const validLevels=levels.filter(level=>level&&(typeof level.id==="string"||Number.isSafeInteger(level.id))&&Array.isArray(level.objects));
+          const usedIds=new Set(),idMap=new Map();
+          let changed=validLevels.length!==levels.length;
+          let nextId=1;
+          validLevels.forEach(level=>{
+            const oldId=String(level.id);
+            const parsedId=/^\d+$/.test(oldId)?Number(oldId):NaN;
+            let numericId=Number.isSafeInteger(parsedId)&&parsedId>0?parsedId:0;
+            if(!numericId||usedIds.has(numericId)){
+              while(usedIds.has(nextId))nextId++;
+              numericId=nextId++;
+            }
+            usedIds.add(numericId);
+            if(level.id!==numericId)changed=true;
+            idMap.set(oldId,numericId);
+            level.id=numericId;
+          });
+          if(changed){
+            localStorage.setItem("lumen-user-levels",JSON.stringify(validLevels));
+            const draftRaw=localStorage.getItem("lumen-editor-draft");
+            if(draftRaw){
+              const draft=JSON.parse(draftRaw);
+              const mappedId=idMap.get(String(draft.id));
+              if(mappedId) { draft.id=mappedId;localStorage.setItem("lumen-editor-draft",JSON.stringify(draft)); }
+            }
+          }
+          return validLevels;
         }
         const legacy=localStorage.getItem("lumen-custom-level");
         if(legacy){
           const oldLevel=JSON.parse(legacy);
           if(oldLevel&&Array.isArray(oldLevel.objects)){
-            const migrated=[{id:"legacy-"+Date.now(),name:String(oldLevel.name||"Livello importato"),objects:oldLevel.objects,published:true,updatedAt:new Date().toISOString()}];
+            const migrated=[{id:1,name:String(oldLevel.name||"Livello importato"),objects:oldLevel.objects,published:true,updatedAt:new Date().toISOString()}];
             localStorage.setItem("lumen-user-levels",JSON.stringify(migrated));
             return migrated;
           }
@@ -1257,7 +1288,7 @@
         const stored=localStorage.getItem("lumen-editor-draft");
         if(!stored)return null;
         const draft=JSON.parse(stored);
-        if(!draft||typeof draft.id!=="string"||!Array.isArray(draft.objects))throw new Error("La bozza salvata non è valida.");
+        if(!draft||!(typeof draft.id==="string"||Number.isSafeInteger(draft.id))||!Array.isArray(draft.objects))throw new Error("La bozza salvata non è valida.");
         return draft;
       } catch(error) {
         alert("Impossibile caricare la bozza dell'editor: "+error.message);
@@ -1322,7 +1353,7 @@
         card.className="library-item";
         const title=document.createElement("h3");title.textContent=level.name||"Livello senza nome";
         const info=document.createElement("p");
-        info.textContent=(level.objects.length+" oggetti · "+(level.published?"Pubblicato su questo dispositivo":"Bozza privata"));
+        info.textContent="ID "+level.id+" · "+level.objects.length+" oggetti · "+(level.published?"Pubblicato su questo dispositivo":"Bozza privata");
         card.append(title,info);
         const edit=document.createElement("button");edit.textContent="MODIFICA";edit.addEventListener("click",()=>startEditingLevel(level));
         const play=document.createElement("button");play.textContent="PROVA";play.addEventListener("click",()=>{customLevel={name:level.name,objects:level.objects.map(o=>({...o}))};editorScreen.classList.remove("show");homeScreen.classList.remove("show");newRun();});
@@ -1341,7 +1372,7 @@
       const defaultName="Livello "+(levels.length+1);
       const entered=prompt("Nome del nuovo livello",defaultName);
       if(entered===null)return;
-      editorLevelId="level-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+      editorLevelId=nextLevelId(levels);
       editorLevelName=entered.trim()||defaultName;
       editorObjects=[{type:"player",x:W/2,y:H/2}];editorSelected=null;
       document.querySelector("#editor-publish").textContent="PUBBLICA";
@@ -1376,7 +1407,7 @@
       const levels=readUserLevels();
       const existing=levels.find(level=>level.id===editorLevelId);
       if(!editorLevelId){
-        editorLevelId="level-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+        editorLevelId=nextLevelId(levels);
         editorLevelName="Livello "+(levels.length+1);
       }
       const record={
@@ -1394,6 +1425,9 @@
       document.querySelector("#editor-publish").textContent=record.published?"AGGIORNA PUBBLICAZIONE":"PUBBLICA";
       renderLevelLibrary();
       return true;
+    }
+    function nextLevelId(levels){
+      return levels.reduce((max,level)=>Math.max(max,Number(level.id)||0),0)+1;
     }
     const levelStatsKey="lumen-level-browser-stats";
     let publishedSort="recent";
@@ -1432,7 +1466,7 @@
       choiceGrid.innerHTML="";
       const note=document.createElement("p");
       note.className="level-browser-note";
-      note.textContent="Rated e difficoltà sono assegnati dai moderatori. Like e scaricamenti sono salvati solo su questo browser e non sono statistiche globali.";
+      note.textContent="ID numerici progressivi in questo browser. Rated e difficoltà sono assegnati dai moderatori. Like e scaricamenti sono locali, non globali.";
       choiceGrid.appendChild(note);
       const search=document.createElement("input");
       search.className="level-browser-search";
@@ -1450,6 +1484,20 @@
         nextSearch.setSelectionRange(cursor,cursor);
       });
       choiceGrid.appendChild(search);
+      const idForm=document.createElement("form");
+      idForm.className="level-browser-id-form";
+      idForm.innerHTML='<input name="levelId" type="number" min="1" step="1" inputmode="numeric" placeholder="Inserisci l’ID del livello" aria-label="ID numerico del livello" required><button type="submit">VAI AL LIVELLO</button>';
+      const idError=document.createElement("p");
+      idError.className="level-browser-id-error";
+      idError.setAttribute("aria-live","polite");
+      idForm.addEventListener("submit",event=>{
+        event.preventDefault();
+        const id=Number(new FormData(idForm).get("levelId"));
+        const level=readUserLevels().find(entry=>entry.id===id&&entry.published);
+        if(!level){idError.textContent="Nessun livello pubblicato con questo ID su questo browser.";return;}
+        playPublishedLevel(level);
+      });
+      choiceGrid.append(idForm,idError);
       const sortBar=document.createElement("div");
       sortBar.className="level-browser-sort";
       [["recent","RECENTI"],["downloads","PIÙ SCARICATI"],["likes","PIÙ PIACIUTI"]].forEach(([key,label])=>{
@@ -1506,25 +1554,27 @@
         });
         const play=document.createElement("button");
         play.textContent="GIOCA";
-        play.addEventListener("click",()=>{
-          const current=readPublishedLevelStats();
-          if(!current)return;
-          const item=current[level.id]||{downloads:0,likes:0,liked:false,lastDownloadedAt:""};
-          item.downloads=(item.downloads||0)+1;
-          item.lastDownloadedAt=new Date().toISOString();
-          current[level.id]=item;
-          if(!savePublishedLevelStats(current))return;
-          const available=readUserLevels().find(entry=>entry.id===level.id&&entry.published);
-          if(!available){alert("Questo livello non è più disponibile.");renderPublishedLevelCards();return;}
-          choiceModal.classList.remove("show");
-          choiceModal.classList.remove("level-browser");
-          customLevel={name:available.name,objects:available.objects.map(object=>({...object}))};
-          homeScreen.classList.remove("show");newRun();
-        });
+        play.addEventListener("click",()=>playPublishedLevel(level));
         actions.append(like,play);
         card.append(details,actions);
         choiceGrid.appendChild(card);
       });
+
+    }
+    function playPublishedLevel(level){
+      const current=readPublishedLevelStats();
+      if(!current)return;
+      const item=current[level.id]||{downloads:0,likes:0,liked:false,lastDownloadedAt:""};
+      item.downloads=(item.downloads||0)+1;
+      item.lastDownloadedAt=new Date().toISOString();
+      current[level.id]=item;
+      if(!savePublishedLevelStats(current))return;
+      const available=readUserLevels().find(entry=>entry.id===level.id&&entry.published);
+      if(!available){alert("Questo livello non è più disponibile.");renderPublishedLevelCards();return;}
+      choiceModal.classList.remove("show");
+      choiceModal.classList.remove("level-browser");
+      customLevel={name:available.name,objects:available.objects.map(object=>({...object}))};
+      homeScreen.classList.remove("show");newRun();
     }
     function openPublishedLevels(){
       publishedSort="recent";
