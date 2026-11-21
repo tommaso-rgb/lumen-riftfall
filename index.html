@@ -116,6 +116,8 @@
     #choice-modal.level-browser .choice-panel { width:min(820px,calc(100% - 28px)); max-height:90%; }
     #choice-modal.level-browser .choice-grid { display:grid; grid-template-columns:1fr; gap:10px; }
     .level-browser-note { margin:8px 0 14px; color:#9da6ba; font-size:11px; line-height:1.5; }
+    .level-browser-search { width:100%; margin-bottom:10px; padding:11px 12px; color:#f4f6ff; background:#090e1b; border:1px solid #ffffff24; font:12px "Space Grotesk",sans-serif; }
+    .level-browser-search:focus { outline:1px solid var(--cyan); border-color:var(--cyan); }
     .level-browser-sort { display:flex; flex-wrap:wrap; gap:7px; }
     .level-browser-sort button,.community-level-card button { min-width:0; padding:9px 12px; background:#171d30; color:#dce4f5; border:1px solid #ffffff20; box-shadow:none; font-size:9px; }
     .level-browser-sort button.active { color:#071213; background:var(--cyan); border-color:var(--cyan); }
@@ -1395,6 +1397,7 @@
     }
     const levelStatsKey="lumen-level-browser-stats";
     let publishedSort="recent";
+    let publishedSearchTerm="";
     function readPublishedLevelStats(){
       try {
         const stats=JSON.parse(localStorage.getItem(levelStatsKey)||"{}");
@@ -1416,9 +1419,11 @@
     }
     function renderPublishedLevelCards(sortBy){
       if(sortBy)publishedSort=sortBy;
-      const levels=readUserLevels().filter(level=>level.published);
+      let levels=readUserLevels().filter(level=>level.published);
       const stats=readPublishedLevelStats();
       if(!stats)return;
+      const query=publishedSearchTerm.trim().toLocaleLowerCase("it");
+      if(query)levels=levels.filter(level=>String(level.name||"").toLocaleLowerCase("it").includes(query)||String(level.id).toLocaleLowerCase("it").includes(query));
       if(publishedSort==="downloads")levels.sort((a,b)=>(stats[b.id]?.downloads||0)-(stats[a.id]?.downloads||0));
       else if(publishedSort==="likes")levels.sort((a,b)=>(stats[b.id]?.likes||0)-(stats[a.id]?.likes||0));
       else levels.sort((a,b)=>Date.parse(b.updatedAt||0)-Date.parse(a.updatedAt||0));
@@ -1429,6 +1434,22 @@
       note.className="level-browser-note";
       note.textContent="Rated e difficoltà sono assegnati dai moderatori. Like e scaricamenti sono salvati solo su questo browser e non sono statistiche globali.";
       choiceGrid.appendChild(note);
+      const search=document.createElement("input");
+      search.className="level-browser-search";
+      search.type="search";
+      search.maxLength=80;
+      search.placeholder="Cerca per nome o ID";
+      search.setAttribute("aria-label","Cerca livelli pubblicati per nome o ID");
+      search.value=publishedSearchTerm;
+      search.addEventListener("input",()=>{
+        const cursor=search.selectionStart;
+        publishedSearchTerm=search.value;
+        renderPublishedLevelCards();
+        const nextSearch=choiceGrid.querySelector(".level-browser-search");
+        nextSearch.focus();
+        nextSearch.setSelectionRange(cursor,cursor);
+      });
+      choiceGrid.appendChild(search);
       const sortBar=document.createElement("div");
       sortBar.className="level-browser-sort";
       [["recent","RECENTI"],["downloads","PIÙ SCARICATI"],["likes","PIÙ PIACIUTI"]].forEach(([key,label])=>{
@@ -1442,7 +1463,7 @@
       if(!levels.length){
         const empty=document.createElement("div");
         empty.className="community-level-empty";
-        empty.textContent="Non ci sono ancora livelli pubblicati su questo dispositivo.";
+        empty.textContent=query?"Nessun livello corrisponde alla ricerca.":"Non ci sono ancora livelli pubblicati su questo dispositivo.";
         choiceGrid.appendChild(empty);
         return;
       }
@@ -1458,10 +1479,13 @@
         const unrated=document.createElement("span");
         unrated.className="community-level-badge unrated";
         unrated.textContent="NON RATED";
+        const levelId=document.createElement("span");
+        levelId.className="community-level-badge";
+        levelId.textContent="ID · "+level.id;
         const difficulty=document.createElement("span");
         difficulty.className="community-level-badge";
         difficulty.textContent="DIFFICOLTÀ · IN ATTESA DEI MODERATORI";
-        meta.append(unrated,difficulty);
+        meta.append(unrated,difficulty,levelId);
         const statsLine=document.createElement("p");
         const lastDownload=levelStats.lastDownloadedAt?new Date(levelStats.lastDownloadedAt).toLocaleDateString("it-IT"):"Nessuno scaricamento";
         statsLine.textContent=(levelStats.downloads||0)+" scaricamenti locali · "+(levelStats.likes||0)+" like locali · recente: "+lastDownload;
@@ -1504,6 +1528,7 @@
     }
     function openPublishedLevels(){
       publishedSort="recent";
+      publishedSearchTerm="";
       renderPublishedLevelCards();
       choiceModal.classList.add("show");
     }
